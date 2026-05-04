@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import slugify from "slugify";
 
 const ProductSchema = new mongoose.Schema(
   {
@@ -39,7 +40,25 @@ const ProductSchema = new mongoose.Schema(
       trim: true,
     },
 
-    
+     title: {
+  type: String,
+  required: true,
+  trim: true,
+},
+
+slug: {
+  type: String,
+  unique: true,
+  lowercase: true,
+  trim: true,
+},
+
+sku: {
+  type: String,
+  unique: true,
+  sparse: true,
+  trim: true,
+},
 
     // pack_size: {
     //   type: String,
@@ -47,11 +66,11 @@ const ProductSchema = new mongoose.Schema(
     //   trim: true,
     // },
 
-    // stock: {
-    //   type: Number,
-    //   required: true,
-    //   min: 0,
-    // },
+    stock: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
 
     // originalStock: {
     //   type: Number,
@@ -129,14 +148,63 @@ ProductSchema.pre(/^find/, function (next) {
   this.where({ isDeleted: false });
 });
 
+
 ProductSchema.pre("save", async function (next) {
+
+  // SLUG
+  if (this.title && !this.slug) {
+    let baseSlug = slugify(this.title, {
+      lower: true,
+      strict: true,
+    });
+
+    let slug = baseSlug;
+    let exists = true;
+    let count = 1;
+
+    while (exists) {
+      const found = await mongoose.models.Product.findOne({ slug });
+
+      if (!found) {
+        exists = false;
+      } else {
+        slug = `${baseSlug}-${count}`;
+        count++;
+      }
+    }
+
+    this.slug = slug;
+  }
+
+  // SKU
+  if (!this.sku) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    let sku;
+    let exists = true;
+
+    while (exists) {
+      sku = "SKU-";
+      for (let i = 0; i < 6; i++) {
+        sku += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+
+      const existing = await mongoose.models.Product.findOne({ sku });
+      if (!existing) {
+        exists = false;
+      }
+    }
+
+    this.sku = sku;
+  }
+
+  // PRODUCT ID
   if (!this.productId) {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
     let id;
     let exists = true;
 
-    // 🔥 ensure unique ID
     while (exists) {
       id = "";
       for (let i = 0; i < 7; i++) {
@@ -151,6 +219,7 @@ ProductSchema.pre("save", async function (next) {
 
     this.productId = id;
   }
+
 });
 
 

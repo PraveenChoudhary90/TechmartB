@@ -10,7 +10,9 @@ export const addProduct = async (req, res) => {
     let {
       product_category,
       attributes,
+      title,
       ProductName,
+      stock,
       gst_in_percentage,
       product_mrp,
       Brand,
@@ -21,15 +23,33 @@ export const addProduct = async (req, res) => {
       images
     } = req.body;
 
-    // parse attributes
+    // =========================
+    // 🔹 SAFE JSON PARSING
+    // =========================
     if (typeof attributes === "string") {
-      attributes = JSON.parse(attributes);
+      attributes = JSON.parse(attributes || "[]");
     }
 
+    if (typeof product_category === "string") {
+      product_category = JSON.parse(product_category || "[]");
+    }
+
+    if (typeof images === "string") {
+      images = JSON.parse(images || "[]");
+    }
+
+    // =========================
+    // 🔹 BOOLEAN FIX
+    // =========================
+    isFeatured = isFeatured === "true" || isFeatured === true;
+    isOnSale = isOnSale === "true" || isOnSale === true;
+
+    // =========================
+    // 🔹 IMAGE UPLOAD
+    // =========================
     let uploadedImages = [];
 
-    // BASE64 images
-    if (images && Array.isArray(images)) {
+    if (Array.isArray(images)) {
       for (let img of images) {
         const uploaded = await imagekit.upload({
           file: img,
@@ -44,8 +64,7 @@ export const addProduct = async (req, res) => {
       }
     }
 
-    // FORM-DATA images
-    if (req.files && req.files.length > 0) {
+    if (req.files?.length) {
       for (let file of req.files) {
         const base64 = file.buffer.toString("base64");
 
@@ -62,10 +81,15 @@ export const addProduct = async (req, res) => {
       }
     }
 
+    // =========================
+    // 🔹 CREATE PRODUCT
+    // =========================
     const product = await Product.create({
       product_category,
       attributes,
+      title,
       ProductName,
+      stock,
       gst_in_percentage,
       product_mrp,
       Brand,
@@ -76,29 +100,32 @@ export const addProduct = async (req, res) => {
       discount_percentage,
     });
 
-    return res.json({
+    return res.status(201).json({
       success: true,
-      message: "Product created",
+      message: "Product created successfully",
       product,
     });
 
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
-
 
 // ======================================
 // 📦 GET ALL PRODUCTS
 // ======================================
 export const getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find()
+    const products = await Product.find({ isDeleted: false })
       .populate("product_category")
       .populate("attributes.attribute");
 
     return res.json({
       success: true,
+      count: products.length,
       products,
     });
 
@@ -141,34 +168,69 @@ export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const product = await Product.findOne({ productId: id });
+    // ==============================
+    // 🔍 FIND PRODUCT BY OBJECT ID
+    // ==============================
+    const product = await Product.findById(id);
 
     if (!product) {
-      return res.status(404).json({ message: "Product not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // ==============================
+    // ✅ PARSE SAFE INPUTS
+    // ==============================
+    let attributes = req.body.attributes;
+    let product_category = req.body.product_category;
+
+    if (typeof attributes === "string") {
+      try {
+        attributes = JSON.parse(attributes);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid attributes format",
+        });
+      }
+    }
+
+    if (typeof product_category === "string") {
+      try {
+        product_category = JSON.parse(product_category);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid product_category format",
+        });
+      }
     }
 
     let updatedImages = product.images;
 
-    // remove images
-    let removeIds = [];
+    // ==============================
+    // 🗑️ REMOVE IMAGES
+    // ==============================
     if (req.body.removeImageIds) {
       try {
-        removeIds = JSON.parse(req.body.removeImageIds);
+        const removeIds = JSON.parse(req.body.removeImageIds);
 
-        for (let fileId of removeIds) {
-          await imagekit.deleteFile(fileId);
-        }
+        await Promise.all(
+          removeIds.map((fileId) => imagekit.deleteFile(fileId))
+        );
 
         updatedImages = updatedImages.filter(
           (img) => !removeIds.includes(img.fileId)
         );
-      } catch (e) {
-        removeIds = [];
-      }
+      } catch {}
     }
 
-    // new images
-    if (req.files && req.files.length > 0) {
+    // ==============================
+    // 📤 ADD NEW IMAGES
+    // ==============================
+    if (req.files?.length) {
       for (let file of req.files) {
         const base64 = file.buffer.toString("base64");
 
@@ -185,23 +247,54 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    const updatedProduct = await Product.findOneAndUpdate(
-      { productId: id },
-      {
-        ...req.body,
-        images: updatedImages,
-      },
+    // ==============================
+    // 🛡️ SAFE UPDATE FIELDS
+    // ==============================
+    const updateData = {
+      images: updatedImages,
+    };
+
+    if (req.body.title) updateData.title = req.body.title;
+    if (req.body.ProductName) updateData.ProductName = req.body.ProductName;
+    if (req.body.stock) updateData.stock = req.body.stock;
+    if (req.body.product_mrp) updateData.product_mrp = req.body.product_mrp;
+    if (req.body.Brand) updateData.Brand = req.body.Brand;
+    if (req.body.detail_description) updateData.detail_description = req.body.detail_description;
+
+    if (req.body.isFeatured !== undefined)
+      updateData.isFeatured = req.body.isFeatured === "true" || req.body.isFeatured === true;
+
+    if (req.body.isOnSale !== undefined)
+      updateData.isOnSale = req.body.isOnSale === "true" || req.body.isOnSale === true;
+
+    if (req.body.discount_percentage)
+      updateData.discount_percentage = req.body.discount_percentage;
+
+    if (attributes) updateData.attributes = attributes;
+    if (product_category) updateData.product_category = product_category;
+
+    // ==============================
+    // ✏️ UPDATE PRODUCT
+    // ==============================
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      updateData,
       { new: true }
-    );
+    )
+      .populate("product_category")
+      .populate("attributes.attribute");
 
     return res.json({
       success: true,
-      message: "Product updated",
+      message: "Product updated successfully",
       product: updatedProduct,
     });
 
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 
@@ -213,8 +306,8 @@ export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const product = await Product.findOneAndUpdate(
-      { productId: id },
+    const product = await Product.findByIdAndUpdate(
+      id,
       {
         isDeleted: true,
         deletedAt: new Date(),
@@ -222,12 +315,23 @@ export const deleteProduct = async (req, res) => {
       { new: true }
     );
 
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
     return res.json({
       success: true,
-      message: "Product deleted",
+      message: "Product deleted successfully",
+      product,
     });
 
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
