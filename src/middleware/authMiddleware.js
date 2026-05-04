@@ -7,24 +7,25 @@ configDotenv();
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// console.log("Loaded JWT_SECRET:", JWT_SECRET); // Debug log
-
 export const auth = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    if (!JWT_SECRET) {
+      return res.status(500).json({
+        success: false,
+        message: "Server configuration error: JWT secret is missing",
+      });
+    }
 
-    // console.log("Auth Header:", authHeader); // Debug log
+    const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Token missing",
+        message: "Token missing or invalid authorization header",
       });
     }
 
     const token = authHeader.split(" ")[1].trim();
-
-    // console.log("Token:", token); // Debug log
 
     const decoded = jwt.verify(token, JWT_SECRET);
 
