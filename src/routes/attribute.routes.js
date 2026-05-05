@@ -2,7 +2,7 @@
 
 import express from "express";
 import { adminOnly, auth } from "../middleware/authMiddleware.js";
-import { createAttribute, deleteAttribute, getAllAttributes, getAttributeById, updateAttribute } from "../controllers/AttributeController.js";
+import { createAttribute, deleteAttribute, getAllAttributes, getAttributeById, updateAttribute } from "../controllers/attribute.controller.js";
 
 const route  = express.Router();
 

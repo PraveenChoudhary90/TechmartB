@@ -1,31 +1,28 @@
-import User from "../models/UserModel.js";
+import User from "../models/user.model.js";
+import OTPModel from "../models/otp.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-
 import { sendOTPEmail } from "../utils/email.js";
 
 dotenv.config();
 
-
 const JWT_SECRET = process.env.JWT_SECRET;
 
-
-// 🔥 OTP generator
+// ===============================
+// 🔥 OTP GENERATOR
+// ===============================
 const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000);
+  return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-
-
 // ===============================
-// 🔐 SIGNUP + OTP SEND
+// 📩 SEND OTP (EMAIL VERIFICATION)
 // ===============================
-export const userSignup = async (req, res) => {
+export const sendEmailOTP = async (req, res) => {
   try {
-    const { name, email, phone, city, password, role } = req.body;
+    const { email } = req.body;
 
-    // check user exists
     const existingUser = await User.findOne({ "email.primary": email });
 
     if (existingUser) {
@@ -35,33 +32,22 @@ export const userSignup = async (req, res) => {
       });
     }
 
-    // hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // delete old otp if exists
+    await OTPModel.deleteMany({ email });
 
-    // generate OTP
     const otp = generateOTP();
 
-    // create user
-    const user = await User.create({
-      name,
-      email: { primary: email },
-      phone: { primary: phone },
-      city,
-      password: hashedPassword,
-      role: role || "user",
-      otp: {
-        code: otp,
-        expireAt: Date.now() + 5 * 60 * 1000, // 5 min
-      },
-      isVerified: false,
+    await OTPModel.create({
+      email,
+      code: otp,
+      expireAt: Date.now() + 9 * 60 * 1000,
     });
 
-    // send OTP email
     await sendOTPEmail(email, otp);
 
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "User created. OTP sent to email.",
+      message: "OTP sent successfully",
     });
 
   } catch (error) {
@@ -72,60 +58,41 @@ export const userSignup = async (req, res) => {
   }
 };
 
-
-
 // ===============================
 // 🔐 VERIFY OTP
 // ===============================
-export const verifyOTP = async (req, res) => {
+export const verifyEmailOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const user = await User.findOne({ "email.primary": email });
+    const record = await OTPModel.findOne({ email });
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    if (user.isVerified) {
-      return res.status(400).json({
-        success: false,
-        message: "Already verified",
-      });
-    }
-
-    if (!user.otp || !user.otp.code) {
+    if (!record) {
       return res.status(400).json({
         success: false,
         message: "OTP not found",
       });
     }
 
-    if (user.otp.code.toString() !== otp.toString()) {
+    if (record.code !== otp) {
       return res.status(400).json({
         success: false,
         message: "Invalid OTP",
       });
     }
 
-    if (user.otp.expireAt < Date.now()) {
+    if (record.expireAt < Date.now()) {
       return res.status(400).json({
         success: false,
         message: "OTP expired",
       });
     }
 
-    user.isVerified = true;
-    user.otp = null;
+    await OTPModel.deleteOne({ email });
 
-    await user.save();
-
-    return res.json({
+    return res.status(200).json({
       success: true,
-      message: "OTP verified successfully",
+      message: "Email verified successfully",
     });
 
   } catch (error) {
@@ -136,7 +103,53 @@ export const verifyOTP = async (req, res) => {
   }
 };
 
+// ===============================
+// 🧾 REGISTER USER (AFTER OTP VERIFIED)
+// ===============================
+export const userSignup = async (req, res) => {
+  try {
+    const { name, email, phone, password, role } = req.body;
 
+    const existingUser = await User.findOne({ "email.primary": email });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "User already exists",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      name,
+      email: { primary: email },
+      phone: { primary: phone },
+      password: hashedPassword,
+      role: role || "user",
+      isVerified: true,
+    });
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "User registered successfully",
+      token,
+      user,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 
 // ===============================
 // 🔐 LOGIN
@@ -157,7 +170,7 @@ export const userLogin = async (req, res) => {
     if (!user.isVerified) {
       return res.status(401).json({
         success: false,
-        message: "Please verify your account first",
+        message: "Please verify email first",
       });
     }
 
@@ -171,15 +184,12 @@ export const userLogin = async (req, res) => {
     }
 
     const token = jwt.sign(
-      {
-        id: user._id,
-        role: user.role,
-      },
+      { id: user._id, role: user.role },
       JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    const { password: _, otp, ...userData } = user.toObject();
+    const { password: _, ...userData } = user.toObject();
 
     return res.status(200).json({
       success: true,

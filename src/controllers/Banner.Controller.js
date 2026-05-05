@@ -1,5 +1,5 @@
 import imagekit from "../utils/imagekit.js";
-import Banner from "../../src/models/Banner.model.js";
+import Banner from "../models/banner.model.js";
 
 // CREATE BANNER
 export const createBanner = async (req, res) => {

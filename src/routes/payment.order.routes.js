@@ -1,7 +1,7 @@
 
 import express from "express";
 import { auth, userOnly } from "../middleware/authMiddleware.js";
-import { createRazorpayOrder, verifyPaymentAndCreateOrder } from "../controllers/Order.payment.controller.js";
+import { createRazorpayOrder, verifyPaymentAndCreateOrder } from "../controllers/order.payment.controller.js";
 
 const route = express.Router();
 

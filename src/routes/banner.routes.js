@@ -1,6 +1,6 @@
 import express from "express";
 import { adminOnly, auth } from "../middleware/authMiddleware.js";
-import { createBanner, deleteBanner, getAllBanners, updateBanner } from "../controllers/Banner.Controller.js";
+import { createBanner, deleteBanner, getAllBanners, updateBanner } from "../controllers/banner.controller.js";
 
 
 const route = express.Router();

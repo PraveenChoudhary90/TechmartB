@@ -46,10 +46,10 @@ const UserSchema = new mongoose.Schema(
       },
     },
 
-    city: {
-      type: String,
-      trim: true,
-    },
+    // city: {
+    //   type: String,
+    //   trim: true,
+    // },
 
     password: {
       type: String,
@@ -64,10 +64,10 @@ const UserSchema = new mongoose.Schema(
     },
 
     // 🔐 OTP SYSTEM
-    otp: {
-      code: String,
-      expireAt: Date,
-    },
+    // otp: {
+    //   code: String,
+    //   expireAt: Date,
+    // },
 
     isVerified: {
       type: Boolean,

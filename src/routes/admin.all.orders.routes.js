@@ -1,10 +1,14 @@
 
 import express from "express";
 import { adminOnly, auth } from "../middleware/authMiddleware.js";
-import { getAllUserProducts } from "../controllers/UserProducts.Controller.js";
+import { AdminOrderDetails } from "../controllers/admin.all.order.controlles.js";
+
 
 const route = express.Router();
 
-route.get("/get-products", auth, adminOnly, getAllUserProducts);
+
+route.get("/get-all-orders", auth, adminOnly, AdminOrderDetails);
+
+
 
 export default route;

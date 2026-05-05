@@ -1,9 +1,9 @@
-// controllers/PaymentController.js
+// controllers/Order.payment.controller.js
 
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import dotenv from "dotenv";
-import Order from "../models/Payment.model.js";
+import Order from "../models/payment.model.js";
 
 dotenv.config();
 

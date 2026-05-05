@@ -1,4 +1,4 @@
-import Attribute from "../../src/models/AttributeModel.js"
+import Attribute from "../models/attribute.model.js"
 
 // ==============================
 // ➕ CREATE ATTRIBUTE

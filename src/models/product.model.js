@@ -18,31 +18,31 @@ const ProductSchema = new mongoose.Schema(
     ],
 
     
-    attributes: [
+   attributes: [
+  {
+    key: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    values: [
       {
-        attribute: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Attribute",
-          required: true,
-        },
-        values: [
-          {
-            type: String,
-            trim: true,
-          },
-        ],
-      },
-    ],
+        type: String,
+        trim: true,
+      }
+    ]
+  }
+],
 
     ProductName: {
       type: String,
-      default: "",
+      default:null,
       trim: true,
     },
 
      title: {
   type: String,
-  required: true,
+  required: [true, "Product title is required"],
   trim: true,
 },
 
@@ -59,7 +59,11 @@ sku: {
   sparse: true,
   trim: true,
 },
-
+hsn_code: {
+  type: String,
+  default: "null",
+  trim: true,
+},
     // pack_size: {
     //   type: String,
     //   default: "",
@@ -124,6 +128,8 @@ isOnSale: {
   default: false, // by default product on sale nahi hai
 },
 
+
+
     isDeleted: {
       type: Boolean,
       default: false,
@@ -144,9 +150,6 @@ isOnSale: {
 );
 
 
-ProductSchema.pre(/^find/, function (next) {
-  this.where({ isDeleted: false });
-});
 
 
 ProductSchema.pre("save", async function (next) {

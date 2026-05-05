@@ -1,4 +1,4 @@
-import Category from "../../src/models/CategoryModel.js";
+import Category from "../models/category.model.js";
 import imagekit from "../utils/imagekit.js";
 
 // ==============================
