@@ -1,13 +1,9 @@
-// controllers/Order.payment.controller.js
+// controllers/order.payment.controller.js
 
 import Razorpay from "razorpay";
 import crypto from "crypto";
-import dotenv from "dotenv";
 import Order from "../models/payment.model.js";
 
-dotenv.config();
-
-// Razorpay instance
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
@@ -15,51 +11,79 @@ const razorpay = new Razorpay({
 
 
 // ==============================
-// 1. CREATE RAZORPAY ORDER (NO DB ORDER YET)
+// 1. CREATE RAZORPAY ORDER
 // ==============================
 export const createRazorpayOrder = async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount, totalAmount, user, address, products } = req.body;
 
-    if (!amount) {
+    const paymentAmount = amount || totalAmount;
+    if (!paymentAmount || paymentAmount <= 0) {
       return res.status(400).json({
         success: false,
         message: "Amount required",
       });
     }
 
-    const options = {
-      amount: Math.round(amount * 100), // paise
+    const razorpayOrder = await razorpay.orders.create({
+      amount: paymentAmount * 100,
       currency: "INR",
       receipt: `rcpt_${Date.now()}`,
+    });
+
+    const orderPayload = {
+      user: {
+        id: user?.id,
+        name: user?.name,
+        email: user?.email,
+        phone: user?.phone,
+      },
+      address: {
+        address: address?.address || `${address?.addressLine1 || ""} ${address?.addressLine2 || ""}`.trim(),
+        city: address?.city,
+        state: address?.state,
+        country: address?.country,
+        pincode: address?.pincode || address?.zipCode,
+      },
+      products: mapProducts(products || []),
+      totalAmount: totalAmount || amount || 0,
+      razorpay_order_id: razorpayOrder.id,
+      paymentStatus: "pending",
     };
 
-    const razorpayOrder = await razorpay.orders.create(options);
-
-    if (!razorpayOrder) {
-      return res.status(500).json({
-        success: false,
-        message: "Failed to create Razorpay order",
-      });
-    }
+    await Order.create(orderPayload);
 
     res.json({
       success: true,
-      razorpayOrder,
+      order: razorpayOrder,
+      razorpayOrderId: razorpayOrder.id,
     });
-
-  } catch (error) {
-    console.error("createRazorpayOrder Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Failed to create payment order" });
   }
 };
 
 
 // ==============================
-// 2. VERIFY PAYMENT + CREATE ORDER
+// PRODUCT MAPPER (simple)
+// ==============================
+const mapProducts = (items) => {
+  return items.map((item) => ({
+    productId: item.productId,
+    name: item.ProductName || item.name,
+    quantity: item.qty || 1,
+    price: item.product_mrp || item.price,
+
+    image: item.image,
+    brand: item.brand,
+    category: item.category,
+  }));
+};
+
+
+// ==============================
+// 2. VERIFY PAYMENT + SAVE ORDER
 // ==============================
 export const verifyPaymentAndCreateOrder = async (req, res) => {
   try {
@@ -67,77 +91,54 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
+      user,
       address,
       products,
       totalAmount,
     } = req.body;
 
-    const userId = req.user._id; // ✅ secure user
-
-    // ----------------------------
-    // 1. Validate input
-    // ----------------------------
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({
-        success: false,
-        message: "Payment details missing",
-      });
-    }
-
-    // ----------------------------
-    // 2. Verify Signature
-    // ----------------------------
     const generated_signature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
     if (generated_signature !== razorpay_signature) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment signature",
-      });
+      return res.status(400).json({ success: false, message: "Invalid signature" });
     }
 
-    // ----------------------------
-    // 3. CREATE ORDER (AFTER PAYMENT SUCCESS)
-    // ----------------------------
-    const newOrder = await Order.create({
-      user: userId,
+    const updatedOrder = await Order.findOneAndUpdate(
+      { razorpay_order_id },
+      { paymentStatus: "paid", razorpay_payment_id },
+      { new: true }
+    );
 
-      address,
+    if (!updatedOrder) {
+      const fallbackOrder = {
+        user: {
+          id: user?.id,
+          name: user?.name,
+          email: user?.email,
+          phone: user?.phone,
+        },
+        address: {
+          address: address?.address || `${address?.addressLine1 || ""} ${address?.addressLine2 || ""}`.trim(),
+          city: address?.city,
+          state: address?.state,
+          country: address?.country,
+          pincode: address?.pincode || address?.zipCode,
+        },
+        products: mapProducts(products || []),
+        totalAmount: totalAmount || 0,
+        razorpay_order_id,
+        razorpay_payment_id,
+        paymentStatus: "paid",
+      };
+      await Order.create(fallbackOrder);
+    }
 
-      products: products.map((item) => ({
-        productId: item.productId,
-        name: item.name,
-        quantity: item.qty,
-        price: item.price,
-        gst: item.gst || 0,
-        images: item.images || [],
-        attributes: item.attributes || {},
-        categories: item.categories || [],
-      })),
-
-      totalAmount,
-
-      razorpay_order_id,
-      razorpay_payment_id,
-
-      paymentStatus: "paid",
-      deliveryStatus: "PENDING",
-    });
-
-    res.json({
-      success: true,
-      message: "Payment verified & order created",
-      order: newOrder,
-    });
-
+    res.json({ success: true, message: "Payment verified and order saved" });
   } catch (error) {
-    console.error("verifyPayment Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Payment verification failed",
-    });
+    console.error("PaymentMode Error:", error);
+    res.status(500).json({ success: false, message: "Payment verification failed" });
   }
 };

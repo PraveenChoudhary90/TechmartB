@@ -7,7 +7,7 @@ import { getAllUserOrders } from "../controllers/user.all.orders.controllers.js"
 const route = express.Router();
 
 
-route.get("/get-all-orders/:userId", auth, userOnly, getAllUserOrders);
+route.get("/get-all-orders", auth, userOnly, getAllUserOrders);
 
 
 
